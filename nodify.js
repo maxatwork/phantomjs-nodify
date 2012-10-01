@@ -9,9 +9,13 @@ var global = window;
   // common stuff
   
   var fs = require('fs');
+  var system = require('system');
   
   function dirname(path) {
-    return path.replace(/\/[^\/]*\/?$/, '');
+    if (path.match(/^[A-Z]\:\/?$/)) return '';
+    var chunks = path.replace('\\', '/').split('/');
+    var result = chunks.splice(0, chunks.length - 1).join('/');
+    return result;
   };
   
   function basename(path) {
@@ -24,11 +28,19 @@ var global = window;
   };
   
   var rootPath = fs.absolute(phantom.libraryPath);
-  var nodifyPath = fs.absolute(joinPath(rootPath, dirname(nodify)));
-  if (phantom.version.major >= 1 && phantom.version.minor >= 5) {
-    var mainScript = joinPath(rootPath, basename(require('system').args[0]));
+  var nodifyPath = dirname(nodify);
+  nodifyPath = fs.absolute(joinPath(rootPath, nodifyPath));
+  var mainScript;
+
+  if (phantom.version.major >= 1 && phantom.version.minor >= 5) {  
+    if (system.args[0].match(/^[A-Z]\:/)) {
+      mainScript = basename(system.args[0]);
+    } else {
+      mainScript = joinPath(rootPath, basename(system.args[0]));
+    }
+    mainScript = fs.absolute(mainScript);
   } else {
-    var mainScript = joinPath(rootPath, phantom.scriptName);
+    var mainScript = fs.absolute(joinPath(rootPath, phantom.scriptName));
   }
   var sourceIds = {};
   nodify = {};
@@ -100,7 +112,7 @@ var global = window;
     }
 
     function Module(filename, stubs) {
-      this.id = this.filename = filename;
+      this.id = this.filename = fs.absolute(filename);
       this.dirname = dirname(filename);
       this.exports = {};
       this.stubs = {};
@@ -111,10 +123,9 @@ var global = window;
 
     Module.prototype._getPaths = function(request) {
       var paths = [], dir;
-
       if (request[0] === '.') {
         paths.push(fs.absolute(joinPath(this.dirname, request)));
-      } else if (request[0] === '/') {
+      } else if (request[0] === '/' || request.match(/^[A-Z]:/)) {
         paths.push(fs.absolute(request));
       } else {
         dir = this.dirname;
@@ -130,7 +141,6 @@ var global = window;
 
     Module.prototype._getFilename = function(request) {
       var path, filename = null, paths = this._getPaths(request);
-
       for (var i=0; i<paths.length && !filename; ++i) {
         path = paths[i];
         filename = tryFile(path) || tryExtensions(path) || tryPackage(path) ||
